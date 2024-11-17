@@ -16,7 +16,7 @@ AX25Call path2;
 
 char CALL[7] = "NOCALL";
 int CALL_SSID = 0;
-char DST[7] = "HYMTR";
+char DST[7] = "APRS";
 int DST_SSID = 0;
 char PATH1[7] = "WIDE1";
 int PATH1_SSID = 1;
@@ -29,7 +29,7 @@ AX25Call path[4];
 char latitude[9];
 char longtitude[10];
 char symbolTable = '/';
-char symbol = '>';
+char symbol = '[';
 
 uint8_t power = 10;
 uint8_t height = 10;
@@ -39,6 +39,15 @@ uint8_t directivity = 9;
 char speed[4];
 char course[4] ;
 char direction[4];
+
+// Message packet assembly fields
+char message_recip[7];
+int message_recip_ssid = -1;
+
+int message_seq = 0;
+char lastMessage[67];
+size_t lastMessageLen;
+bool message_autoAck = false;
 
 void APRS_init() {
     AFSK_init(&modem);
@@ -265,6 +274,60 @@ void APRS_sendLoc(void *_buffer, size_t length, char packetType) {
         uint8_t *buffer = (uint8_t *)_buffer;
         memcpy(ptr, buffer, length);
     }
+    APRS_sendPkt(packet, payloadLength);
+    free(packet);
+}
+
+// Dynamic RAM usage of this function is 18 bytes
+void APRS_sendMsg(void *_buffer, size_t length) {
+    if (length > 67) length = 67;
+    size_t payloadLength = 11+length; // +4 per message_seq
+
+    uint8_t *packet = (uint8_t*)malloc(payloadLength);
+    uint8_t *ptr = packet;
+    packet[0] = ':';
+    int callSize = 6;
+    int count = 0;
+    while (callSize--) {
+        if (message_recip[count] != 0) {
+            packet[1+count] = message_recip[count];
+            count++;
+        }
+    }
+    if (message_recip_ssid != -1) {
+        packet[1+count] = '-'; count++;
+        if (message_recip_ssid < 10) {
+            packet[1+count] = message_recip_ssid+48; count++;
+        } else {
+            packet[1+count] = 49; count++;
+            packet[1+count] = message_recip_ssid-10+48; count++;
+        }
+    }
+    while (count < 9) {
+        packet[1+count] = ' '; count++;
+    }
+    packet[1+count] = ':';
+    ptr += 11;
+    if (length > 0) {
+        uint8_t *buffer = (uint8_t *)_buffer;
+        memcpy(ptr, buffer, length);
+        memcpy(lastMessage, buffer, length);
+        lastMessageLen = length;
+    }
+
+    /*
+    message_seq++;
+    if (message_seq > 999) message_seq = 0;
+
+    packet[11+length] = '{';
+    int n = message_seq % 10;
+    int d = ((message_seq % 100) - n)/10;
+    int h = (message_seq - d - n) / 100;
+
+    packet[12+length] = h+48;
+    packet[13+length] = d+48;
+    packet[14+length] = n+48;
+    */
     APRS_sendPkt(packet, payloadLength);
     free(packet);
 }
